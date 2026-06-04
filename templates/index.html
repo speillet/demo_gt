@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Géoportail × QGIS</title>
+  <style>
+    /* ── Thème clair (par défaut) ─────────────────────────────────────────── */
+    :root {
+      --accent: #1565c0;
+      --accent-dark: #0d47a1;
+      --text: #1b2430;
+      --muted: #5b6675;
+      --border: #e2e6ec;
+      --bubble-user: #1565c0;
+      --bubble-bot: #ffffff;
+      --surface: rgba(255, 255, 255, 0.85);
+      --steps-bg: #fafbfc;
+      --code-bg: #eef1f5;
+      --input-bg: #ffffff;
+      --hover: rgba(0, 0, 0, .06);
+      --shadow: 0 1px 2px rgba(0, 0, 0, .08);
+      --bg-overlay: linear-gradient(rgba(245, 247, 250, 0.50), rgba(245, 247, 250, 0.50));
+      --bg-image: url("{{ url_for('static', filename='mode_clair.jpg') }}");
+      --input-h: 96px;
+      --side-w: 264px;
+    }
+    /* ── Thème sombre ─────────────────────────────────────────────────────── */
+    :root[data-theme="dark"] {
+      --accent: #4aa3ef;
+      --accent-dark: #2a87d8;
+      --text: #e6eaf0;
+      --muted: #9aa6b4;
+      --border: #33404f;
+      --bubble-user: #1f6fbf;
+      --bubble-bot: #1d2733;
+      --surface: rgba(18, 24, 32, 0.80);
+      --steps-bg: rgba(255, 255, 255, 0.04);
+      --code-bg: #2a3645;
+      --input-bg: #161e29;
+      --hover: rgba(255, 255, 255, .08);
+      --shadow: 0 1px 3px rgba(0, 0, 0, .35);
+      --bg-overlay: linear-gradient(rgba(8, 12, 18, 0.55), rgba(8, 12, 18, 0.55));
+      --bg-image: url("{{ url_for('static', filename='mode_sombre.jpg') }}");
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      color: var(--text);
+      background: var(--bg-overlay), var(--bg-image) center / cover fixed no-repeat;
+    }
+
+    /* ── Panneau latéral ──────────────────────────────────────────────────── */
+    .sidebar {
+      position: fixed; top: 0; left: 0; bottom: 0; width: var(--side-w); z-index: 6;
+      background: var(--surface);
+      backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; padding: 12px; gap: 10px;
+    }
+    .sidebar h2 {
+      font-size: .72rem; text-transform: uppercase; letter-spacing: .04em;
+      color: var(--muted); margin: 4px 4px;
+    }
+    #new-conv {
+      background: var(--accent); color: #fff; border: none; border-radius: 10px;
+      padding: 10px; font-weight: 600; cursor: pointer; font-size: .9rem;
+    }
+    #new-conv:hover { background: var(--accent-dark); }
+    .conv-list { overflow-y: auto; max-height: 46vh; display: flex; flex-direction: column; gap: 4px; }
+    .conv {
+      display: flex; align-items: center; gap: 6px; padding: 8px 10px;
+      border-radius: 8px; cursor: pointer; border: 1px solid transparent;
+    }
+    .conv:hover { background: var(--hover); }
+    .conv.active { border-color: var(--accent); background: var(--hover); }
+    .conv .meta { flex: 1; min-width: 0; }
+    .conv .title { font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .conv .date { font-size: .7rem; color: var(--muted); }
+    .conv .del { opacity: .5; background: none; border: none; cursor: pointer; font-size: .85rem; color: var(--muted); }
+    .conv .del:hover { opacity: 1; color: #d32f2f; }
+    .files { border-top: 1px solid var(--border); padding-top: 8px; overflow-y: auto; flex: 1 1 auto; }
+    .file-list { display: flex; flex-direction: column; gap: 3px; }
+    .file-list a {
+      display: flex; justify-content: space-between; gap: 8px; align-items: baseline;
+      font-size: .8rem; color: var(--accent); text-decoration: none; padding: 4px 6px; border-radius: 6px;
+    }
+    .file-list a:hover { background: var(--hover); }
+    .file-list .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-list .sz { color: var(--muted); font-size: .72rem; flex: none; }
+    .file-empty { color: var(--muted); font-size: .8rem; padding: 4px 6px; }
+
+    /* ── Zone principale (décalée du panneau) ─────────────────────────────── */
+    .content { margin-left: var(--side-w); }
+    header {
+      position: sticky; top: 0; z-index: 5;
+      background: var(--surface);
+      backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 20px; display: flex; align-items: center; gap: 12px;
+    }
+    header h1 { font-size: 1.05rem; margin: 0; }
+    header .sub { color: var(--muted); font-size: .8rem; margin-left: auto; }
+    header button {
+      border: 1px solid var(--border); background: transparent; color: var(--muted);
+      border-radius: 8px; padding: 6px 10px; cursor: pointer; font-size: .85rem;
+    }
+    header button:hover { border-color: var(--accent); color: var(--accent); }
+
+    main {
+      max-width: 820px; margin: 0 auto;
+      padding: 20px 16px calc(var(--input-h) + 24px);
+    }
+
+    .msg { display: flex; margin: 14px 0; }
+    .msg.user { justify-content: flex-end; }
+    .bubble {
+      max-width: 78%; padding: 11px 14px; border-radius: 14px;
+      line-height: 1.45; white-space: pre-wrap; word-wrap: break-word;
+      box-shadow: var(--shadow);
+    }
+    .msg.user .bubble { background: var(--bubble-user); color: #fff; border-bottom-right-radius: 4px; }
+    .msg.bot .bubble { background: var(--bubble-bot); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+    .bubble table { border-collapse: collapse; }
+    .bubble th, .bubble td { border: 1px solid var(--border); padding: 4px 8px; }
+
+    .steps {
+      margin: 6px 0 0; border: 1px dashed var(--border); border-radius: 10px;
+      background: var(--steps-bg); font-size: .82rem; overflow: hidden;
+    }
+    .steps summary {
+      cursor: pointer; padding: 8px 12px; color: var(--muted);
+      user-select: none; list-style: none;
+    }
+    .steps summary::-webkit-details-marker { display: none; }
+    .steps .step { padding: 4px 12px; border-top: 1px solid var(--border); }
+    .step .tool { color: var(--accent-dark); font-weight: 600; }
+    .step code { background: var(--code-bg); padding: 1px 5px; border-radius: 5px; font-size: .8rem; }
+    .step .res { color: var(--muted); white-space: pre-wrap; }
+
+    .typing { color: var(--muted); font-style: italic; }
+
+    .composer {
+      position: fixed; left: var(--side-w); right: 0; bottom: 0; z-index: 5;
+      background: var(--surface);
+      backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+      border-top: 1px solid var(--border);
+    }
+    .composer .inner {
+      max-width: 820px; margin: 0 auto; padding: 14px 16px;
+      display: flex; gap: 10px; align-items: flex-end;
+    }
+    textarea#prompt {
+      flex: 1; resize: none; min-height: 44px; max-height: 160px;
+      padding: 11px 13px; border: 1px solid var(--border); border-radius: 12px;
+      font: inherit; outline: none; background: var(--input-bg); color: var(--text);
+    }
+    textarea#prompt::placeholder { color: var(--muted); }
+    textarea#prompt:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(74,163,239,.20); }
+    button#send {
+      background: var(--accent); color: #fff; border: none; border-radius: 12px;
+      padding: 0 20px; height: 44px; font-weight: 600; cursor: pointer;
+    }
+    button#send:hover { background: var(--accent-dark); }
+    button#send:disabled { background: #9db8d8; cursor: default; }
+    /* Mode « arrêt » pendant que l'agent travaille : carré rouge */
+    button#send.stop { background: #d32f2f; width: 44px; padding: 0; font-size: 1.1rem; line-height: 1; }
+    button#send.stop:hover { background: #b71c1c; }
+  </style>
+  <script>
+    // Applique le thème avant le rendu pour éviter un flash de couleur.
+    (function () {
+      var t = localStorage.getItem("theme")
+        || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      document.documentElement.setAttribute("data-theme", t);
+    })();
+  </script>
+</head>
+<body>
+  <aside class="sidebar">
+    <button id="new-conv">＋ Nouvelle conversation</button>
+    <h2>Conversations</h2>
+    <div id="conv-list" class="conv-list"></div>
+    <h2>Fichiers de la conversation</h2>
+    <div class="files"><div id="file-list" class="file-list"></div></div>
+  </aside>
+
+  <div class="content">
+    <header>
+      <h1>🗺️ Agent géospatial — Géoportail (IGN) × QGIS</h1>
+      <span class="sub">QGIS ouvert + plugin « Start Server » requis</span>
+      <button id="theme" title="Changer de thème">🌙</button>
+    </header>
+
+    <main id="messages"></main>
+
+    <div class="composer">
+      <div class="inner">
+        <textarea id="prompt" rows="1"
+          placeholder="Ex. : géocode '1 place Bellecour, Lyon' et charge le cadastre dans QGIS"></textarea>
+        <button id="send">Envoyer</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $messages = document.getElementById("messages");
+    const $prompt = document.getElementById("prompt");
+    const $send = document.getElementById("send");
+    const $theme = document.getElementById("theme");
+    const $newConv = document.getElementById("new-conv");
+    const $convList = document.getElementById("conv-list");
+    const $fileList = document.getElementById("file-list");
+
+    let activeId = null;
+
+    // ── Thème clair / sombre ────────────────────────────────────────────────
+    function applyTheme(t) {
+      document.documentElement.setAttribute("data-theme", t);
+      $theme.textContent = t === "dark" ? "☀️" : "🌙";
+      $theme.title = t === "dark" ? "Passer en mode clair" : "Passer en mode sombre";
+    }
+    applyTheme(document.documentElement.getAttribute("data-theme") || "light");
+    $theme.addEventListener("click", () => {
+      const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+      localStorage.setItem("theme", next);
+      applyTheme(next);
+    });
+
+    function escapeHtml(s) {
+      return s.replace(/[&<>"']/g, c => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[c]));
+    }
+
+    function fmtSize(n) {
+      if (n < 1024) return n + " o";
+      if (n < 1024 * 1024) return (n / 1024).toFixed(0) + " Ko";
+      return (n / (1024 * 1024)).toFixed(1) + " Mo";
+    }
+    function fmtDate(iso) {
+      if (!iso) return "";
+      try { return new Date(iso).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" }); }
+      catch (e) { return ""; }
+    }
+
+    // ── Conversations ───────────────────────────────────────────────────────
+    async function loadConversations(openFirst = true) {
+      const list = await (await fetch("/conversations")).json();
+      renderConvList(list);
+      if (openFirst) {
+        if (list.length === 0) { await newConversation(); }
+        else if (!activeId || !list.some(c => c.id === activeId)) { await openConversation(list[0].id); }
+      }
+      return list;
+    }
+
+    function renderConvList(list) {
+      $convList.innerHTML = "";
+      for (const c of list) {
+        const row = document.createElement("div");
+        row.className = "conv" + (c.id === activeId ? " active" : "");
+        row.innerHTML =
+          `<div class="meta"><div class="title">${escapeHtml(c.title)}</div>` +
+          `<div class="date">${fmtDate(c.updated_at)} · ${c.message_count} msg · ${c.file_count} fich.</div></div>` +
+          `<button class="del" title="Supprimer">🗑</button>`;
+        row.querySelector(".meta").addEventListener("click", () => openConversation(c.id));
+        row.querySelector(".del").addEventListener("click", (e) => { e.stopPropagation(); deleteConversation(c.id); });
+        $convList.appendChild(row);
+      }
+    }
+
+    function renderFiles(files) {
+      $fileList.innerHTML = "";
+      if (!files || files.length === 0) {
+        $fileList.innerHTML = '<div class="file-empty">Aucun fichier pour l\'instant.</div>';
+        return;
+      }
+      for (const f of files) {
+        const a = document.createElement("a");
+        a.href = `/conversations/${activeId}/files/${encodeURIComponent(f.name)}`;
+        a.title = "Télécharger " + f.name;
+        a.setAttribute("download", "");
+        a.innerHTML = `<span class="name">📄 ${escapeHtml(f.name)}</span><span class="sz">${fmtSize(f.size)}</span>`;
+        $fileList.appendChild(a);
+      }
+    }
+
+    async function openConversation(id) {
+      const data = await (await fetch(`/conversations/${id}`)).json();
+      activeId = id;
+      $messages.innerHTML = "";
+      for (const m of data.messages) addMessage(m.role, m.content);
+      renderFiles(data.files);
+      // surligne l'actif sans recharger toute la liste
+      document.querySelectorAll(".conv").forEach(el => el.classList.remove("active"));
+      const list = await (await fetch("/conversations")).json();
+      renderConvList(list);
+      scrollDown();
+      $prompt.focus();
+    }
+
+    async function newConversation() {
+      const meta = await (await fetch("/conversations", { method: "POST" })).json();
+      await loadConversations(false);
+      await openConversation(meta.id);
+    }
+
+    async function deleteConversation(id) {
+      if (!confirm("Supprimer cette conversation et ses fichiers ?")) return;
+      await fetch(`/conversations/${id}`, { method: "DELETE" });
+      if (id === activeId) activeId = null;
+      await loadConversations(true);
+    }
+
+    // ── Rendu des messages ──────────────────────────────────────────────────
+    function addMessage(role, text) {
+      const wrap = document.createElement("div");
+      wrap.className = "msg " + (role === "user" ? "user" : "bot");
+      const bubble = document.createElement("div");
+      bubble.className = "bubble";
+      bubble.textContent = text;
+      wrap.appendChild(bubble);
+      $messages.appendChild(wrap);
+      scrollDown();
+      return bubble;
+    }
+
+    function makeBotTurn() {
+      const wrap = document.createElement("div");
+      wrap.className = "msg bot";
+      const col = document.createElement("div");
+      col.style.maxWidth = "78%";
+
+      const steps = document.createElement("details");
+      steps.className = "steps";
+      steps.open = true;
+      const sum = document.createElement("summary");
+      sum.textContent = "Étapes de l'agent";
+      steps.appendChild(sum);
+
+      const bubble = document.createElement("div");
+      bubble.className = "bubble typing";
+      bubble.textContent = "L'agent travaille…";
+
+      col.appendChild(steps);
+      col.appendChild(bubble);
+      wrap.appendChild(col);
+      $messages.appendChild(wrap);
+      scrollDown();
+      return { steps, bubble };
+    }
+
+    function addStep(steps, html) {
+      const div = document.createElement("div");
+      div.className = "step";
+      div.innerHTML = html;
+      steps.appendChild(div);
+      scrollDown();
+    }
+
+    function scrollDown() {
+      window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+    }
+
+    function handleEvent(evt, ui) {
+      if (evt.type === "tool_call") {
+        addStep(ui.steps,
+          `🛠️ <span class="tool">${escapeHtml(evt.name)}</span> ` +
+          `<code>${escapeHtml(JSON.stringify(evt.args))}</code>`);
+      } else if (evt.type === "tool_result") {
+        addStep(ui.steps,
+          `↳ <em>${escapeHtml(evt.name || "")}</em> : ` +
+          `<span class="res">${escapeHtml(evt.preview || "")}</span>`);
+      } else if (evt.type === "final") {
+        ui.bubble.classList.remove("typing");
+        ui.bubble.textContent = evt.text;
+        scrollDown();
+      } else if (evt.type === "stopped") {
+        ui.bubble.classList.remove("typing");
+        ui.bubble.textContent = "⏹ Travail de l'agent interrompu.";
+      } else if (evt.type === "error") {
+        ui.bubble.classList.remove("typing");
+        ui.bubble.textContent = "❌ " + evt.message;
+      }
+    }
+
+    let working = false;
+    let controller = null;
+
+    function setWorking(on) {
+      working = on;
+      if (on) {
+        $send.classList.add("stop");
+        $send.textContent = "■";
+        $send.title = "Arrêter le travail de l'agent";
+      } else {
+        $send.classList.remove("stop");
+        $send.textContent = "Envoyer";
+        $send.title = "";
+      }
+    }
+
+    async function stopTurn() {
+      try { await fetch("/stop", { method: "POST" }); } catch (e) { /* ignore */ }
+      if (controller) controller.abort();
+    }
+
+    async function refreshAfterTurn() {
+      // Met à jour les titres + fichiers (l'agent a pu en produire).
+      try {
+        renderConvList(await (await fetch("/conversations")).json());
+        const data = await (await fetch(`/conversations/${activeId}`)).json();
+        renderFiles(data.files);
+      } catch (e) { /* ignore */ }
+    }
+
+    async function send() {
+      const text = $prompt.value.trim();
+      if (!text || !activeId) return;
+      $prompt.value = "";
+      autoGrow();
+
+      addMessage("user", text);
+      const ui = makeBotTurn();
+      controller = new AbortController();
+      setWorking(true);
+
+      try {
+        const resp = await fetch("/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: text, conversation_id: activeId }),
+          signal: controller.signal,
+        });
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          let nl;
+          while ((nl = buf.indexOf("\n")) >= 0) {
+            const line = buf.slice(0, nl).trim();
+            buf = buf.slice(nl + 1);
+            if (line) handleEvent(JSON.parse(line), ui);
+          }
+        }
+      } catch (e) {
+        ui.bubble.classList.remove("typing");
+        if (e.name === "AbortError") {
+          ui.bubble.textContent = "⏹ Travail de l'agent interrompu.";
+        } else {
+          ui.bubble.textContent = "❌ Erreur réseau : " + e;
+        }
+      } finally {
+        setWorking(false);
+        controller = null;
+        await refreshAfterTurn();
+        $prompt.focus();
+      }
+    }
+
+    function autoGrow() {
+      $prompt.style.height = "auto";
+      $prompt.style.height = Math.min($prompt.scrollHeight, 160) + "px";
+    }
+
+    $send.addEventListener("click", () => { if (working) stopTurn(); else send(); });
+    $newConv.addEventListener("click", newConversation);
+    $prompt.addEventListener("input", autoGrow);
+    $prompt.addEventListener("keydown", e => {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!working) send(); }
+    });
+
+    loadConversations(true);
+  </script>
+</body>
+</html>
