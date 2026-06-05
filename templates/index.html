@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Agent Géoportail × QGIS</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='IGN_logo_2012.svg.png') }}" />
   <style>
     /* ── Thème clair (par défaut) ─────────────────────────────────────────── */
     :root {
@@ -22,6 +23,7 @@
       --shadow: 0 1px 2px rgba(0, 0, 0, .08);
       --bg-overlay: linear-gradient(rgba(245, 247, 250, 0.50), rgba(245, 247, 250, 0.50));
       --bg-image: url("{{ url_for('static', filename='mode_clair.jpg') }}");
+      --logo: url("{{ url_for('static', filename='IGN_logo_2012.svg.png') }}");
       --input-h: 96px;
       --side-w: 264px;
     }
@@ -42,6 +44,7 @@
       --shadow: 0 1px 3px rgba(0, 0, 0, .35);
       --bg-overlay: linear-gradient(rgba(8, 12, 18, 0.55), rgba(8, 12, 18, 0.55));
       --bg-image: url("{{ url_for('static', filename='mode_sombre.jpg') }}");
+      /* logo transparent unique : pas de variante sombre nécessaire */
     }
 
     * { box-sizing: border-box; }
@@ -97,15 +100,22 @@
     header {
       position: sticky; top: 0; z-index: 5;
       background: var(--surface);
-      backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+      backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
       border-bottom: 1px solid var(--border);
-      padding: 12px 20px; display: flex; align-items: center; gap: 12px;
+      padding: 10px 22px; display: flex; align-items: center; gap: 14px;
     }
-    header h1 { font-size: 1.05rem; margin: 0; }
-    header .sub { color: var(--muted); font-size: .8rem; margin-left: auto; }
+    header .logo {
+      width: 48px; height: 52px; flex: none;
+      background: var(--logo) center / contain no-repeat;
+    }
+    header .brand { display: flex; flex-direction: column; line-height: 1.1; }
+    header .brand h1 { font-size: 1.02rem; margin: 0; font-weight: 700; letter-spacing: .2px; }
+    header .brand .tagline { font-size: .74rem; color: var(--muted); }
+    header .sub { color: var(--muted); font-size: .78rem; margin-left: auto; }
     header button {
       border: 1px solid var(--border); background: transparent; color: var(--muted);
-      border-radius: 8px; padding: 6px 10px; cursor: pointer; font-size: .85rem;
+      border-radius: 9px; padding: 7px 11px; cursor: pointer; font-size: 1rem;
+      transition: border-color .15s, color .15s, background .15s;
     }
     header button:hover { border-color: var(--accent); color: var(--accent); }
 
@@ -168,6 +178,40 @@
     /* Mode « arrêt » pendant que l'agent travaille : carré rouge */
     button#send.stop { background: #d32f2f; width: 44px; padding: 0; font-size: 1.1rem; line-height: 1; }
     button#send.stop:hover { background: #b71c1c; }
+
+    /* ── Transitions douces ───────────────────────────────────────────────── */
+    .conv, .file-list a, #new-conv, button#send { transition: background .15s, border-color .15s, color .15s; }
+    .bubble { transition: box-shadow .15s; }
+
+    /* ── Barres de défilement discrètes ───────────────────────────────────── */
+    .conv-list, .files, main { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+    .conv-list::-webkit-scrollbar, .files::-webkit-scrollbar { width: 8px; }
+    .conv-list::-webkit-scrollbar-thumb, .files::-webkit-scrollbar-thumb {
+      background: var(--border); border-radius: 8px;
+    }
+
+    /* ── Écran d'accueil (conversation vide) ──────────────────────────────── */
+    .welcome {
+      text-align: center; margin: 7vh auto 0; max-width: 520px; padding: 30px 26px 34px;
+      background: var(--surface);
+      backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+      border: 1px solid var(--border); border-radius: 18px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, .20);
+    }
+    .welcome .welcome-logo {
+      width: 150px; height: 165px; margin: 0 auto;
+      background: var(--logo) center / contain no-repeat;
+      filter: drop-shadow(0 2px 8px rgba(0, 0, 0, .25));
+    }
+    .welcome h2 { margin: 16px 0 4px; font-size: 1.4rem; }
+    .welcome p { color: var(--muted); margin: 0 0 22px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+    .chip {
+      background: var(--input-bg); border: 1px solid var(--border); color: var(--text);
+      border-radius: 999px; padding: 9px 14px; font-size: .85rem; cursor: pointer;
+      transition: border-color .15s, transform .1s;
+    }
+    .chip:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-1px); }
   </style>
   <script>
     // Applique le thème avant le rendu pour éviter un flash de couleur.
@@ -189,7 +233,11 @@
 
   <div class="content">
     <header>
-      <h1>🗺️ Agent géospatial — Géoportail (IGN) × QGIS</h1>
+      <span class="logo" role="img" aria-label="IGN"></span>
+      <div class="brand">
+        <h1>Agent géospatial</h1>
+        <span class="tagline">Géoportail IGN × QGIS</span>
+      </div>
       <span class="sub">QGIS ouvert + plugin « Start Server » requis</span>
       <button id="theme" title="Changer de thème">🌙</button>
     </header>
@@ -288,11 +336,28 @@
       }
     }
 
+    function showWelcome() {
+      $messages.innerHTML =
+        `<div class="welcome">` +
+        `<div class="welcome-logo" role="img" aria-label="IGN"></div>` +
+        `<h2>Bienvenue 👋</h2>` +
+        `<p>Demandez à l'agent de récupérer des données de la Géoplateforme IGN ` +
+        `puis de les manipuler dans QGIS — en langage naturel.</p>` +
+        `<div class="chips">` +
+        `<button class="chip">Quelle est l'altitude au point lon 4.83 lat 45.76 ?</button>` +
+        `<button class="chip">Géocode « 1 place Bellecour, Lyon » et localise-le dans QGIS</button>` +
+        `<button class="chip">Liste les couches WFS contenant « bati »</button>` +
+        `</div></div>`;
+      $messages.querySelectorAll(".chip").forEach(b =>
+        b.addEventListener("click", () => { $prompt.value = b.textContent; autoGrow(); send(); }));
+    }
+
     async function openConversation(id) {
       const data = await (await fetch(`/conversations/${id}`)).json();
       activeId = id;
       $messages.innerHTML = "";
-      for (const m of data.messages) addMessage(m.role, m.content);
+      if (data.messages.length === 0) showWelcome();
+      else for (const m of data.messages) addMessage(m.role, m.content);
       renderFiles(data.files);
       // surligne l'actif sans recharger toute la liste
       document.querySelectorAll(".conv").forEach(el => el.classList.remove("active"));
@@ -423,6 +488,8 @@
       $prompt.value = "";
       autoGrow();
 
+      const w = $messages.querySelector(".welcome");
+      if (w) w.remove();
       addMessage("user", text);
       const ui = makeBotTurn();
       controller = new AbortController();

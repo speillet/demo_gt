@@ -1,4 +1,4 @@
-# 🌍 demo_gt — Agent géospatial Géoportail (IGN) × QGIS
+# 🌍 Agent géospatial Géoportail (IGN) × QGIS
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
