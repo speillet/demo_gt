@@ -14,11 +14,8 @@ CONVERSATIONS_DIR = os.path.join(DATA_DIR, "conversations")
 # ==============================================================================
 # Modèles (LLM)
 # ==============================================================================
-DEFAULT_ANTHROPIC_MODEL = os.environ.get("LLM_MODEL", "claude-sonnet-4-6")
-DEFAULT_OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "deepseek/deepseek-v4-pro")
-OPENROUTER_BASE_URL = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-LLM_PROVIDER = os.environ.get("LLM_PROVIDER")
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+# La sélection et la configuration du fournisseur de modèle sont gérées dans
+# ``llm.py`` (registre de fournisseurs, lecture paresseuse des variables d'env).
 
 # ==============================================================================
 # Serveurs MCP

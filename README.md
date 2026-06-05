@@ -64,35 +64,27 @@ Renseignez ensuite `OPENROUTER_API_KEY` (et optionnellement `OPENROUTER_MODEL`) 
 
 ## 🤖 Fournisseur LLM
 
-L'agent détecte automatiquement le fournisseur :
+Le fournisseur est choisi par la variable `LLM_PROVIDER`. S'il n'est pas défini, l'agent **auto-détecte** le premier fournisseur configuré (clé présente). Toute la logique est dans [`llm.py`](llm.py) — un **registre de fournisseurs** facilement extensible.
 
-#### 🟢 OpenRouter (par défaut)
-
-Utilisé dès que `OPENROUTER_API_KEY` est défini.
-
-| Variable | Description | Défaut |
+| `LLM_PROVIDER` | Type | Variables principales |
 |---|---|---|
-| `OPENROUTER_API_KEY` | Clé API OpenRouter | — |
-| `OPENROUTER_MODEL` | Modèle à utiliser | `deepseek/deepseek-v4-pro` |
+| `openrouter` *(défaut)* | OpenAI-compatible | `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENROUTER_BASE_URL` |
+| `anthropic` | API native | `ANTHROPIC_API_KEY`, `LLM_MODEL` |
+| `openai` | API native | `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL` |
+| `github_copilot` | proxy local `copilot-api` | `COPILOT_BASE_URL`, `COPILOT_API_KEY`, `COPILOT_MODEL` |
+| `custom` | **tout endpoint OpenAI-compatible** (opencode, vLLM, Ollama…) | `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL_NAME` |
 
-> ⚠️ Choisissez un modèle **fort en tool calling** — l'agent expose ~61 outils. Nécessite des **crédits OpenRouter**. Slugs disponibles sur [openrouter.ai/models](https://openrouter.ai/models).
+> ⚠️ Choisissez un modèle **fort en tool calling** — l'agent expose ~61 outils. Voir [`.env.example`](.env.example) pour toutes les variables.
 
-#### 🟣 Anthropic (repli)
-
-Utilisé si aucune clé OpenRouter n'est présente.
-
-| Variable | Description | Défaut |
-|---|---|---|
-| `ANTHROPIC_API_KEY` | Clé API Anthropic | — |
-| `LLM_MODEL` | Modèle Claude | `claude-sonnet-4-6` |
-
-> ⚠️ Nécessite des **crédits API Anthropic**.
-
-#### Forçage explicite
+**Changer de fournisseur** : il suffit de définir `LLM_PROVIDER` (+ ses variables) dans `.env`, puis relancer l'app. Exemples :
 
 ```bash
-LLM_PROVIDER=openrouter   # ou LLM_PROVIDER=anthropic
+LLM_PROVIDER=anthropic              # API Claude native
+LLM_PROVIDER=github_copilot         # via le proxy local copilot-api
+LLM_PROVIDER=custom                 # n'importe quel endpoint OpenAI-compatible
 ```
+
+**Ajouter un fournisseur** : pour un endpoint OpenAI-compatible, le mode `custom` suffit (zéro code). Sinon, ajouter un `register(Provider(...))` dans [`llm.py`](llm.py).
 
 ---
 

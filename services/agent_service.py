@@ -6,7 +6,7 @@ import threading
 
 from langchain_core.messages import AIMessage, ToolMessage
 
-from agent import build_agent
+from agent import build_agent, rebuild_agent_with_model
 
 class AgentRuntime:
     """Boucle asyncio en thread d'arrière-plan + agent MCP persistant."""
@@ -16,7 +16,7 @@ class AgentRuntime:
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
         # Construit l'agent (et ouvre les sessions MCP) sur la boucle dédiée.
-        self.agent, self.tools = self._submit(build_agent()).result()
+        self.agent, self.tools, self._mcp_client = self._submit(build_agent()).result()
         # Future du tour en cours (pour pouvoir l'annuler depuis /stop).
         self._current = None
 
@@ -64,6 +64,10 @@ class AgentRuntime:
         fut = self._current
         return bool(fut and fut.cancel())
 
+    def switch_model(self, model_id: str) -> None:
+        """Reconstruit l'agent avec un autre modèle (réutilise les outils MCP)."""
+        self.agent = rebuild_agent_with_model(model_id, self.tools, self._mcp_client)
+
 # ── Runtime partagé (singleton, construit à la 1re requête) ────────────────────
 _runtime: AgentRuntime | None = None
 _runtime_lock = threading.Lock()
@@ -75,21 +79,34 @@ def get_runtime() -> AgentRuntime:
             _runtime = AgentRuntime()
     return _runtime
 
+
+def cancel_current() -> bool:
+    """Annule le tour en cours, sans créer de runtime s'il n'existe pas encore."""
+    with _runtime_lock:
+        runtime = _runtime
+    return bool(runtime and runtime.cancel_current())
+
 def updates_to_events(chunk: dict):
     """Convertit un update LangGraph en événements pour le frontend.
 
-    Renvoie une liste de dicts ``{"type": ...}`` et le texte assistant accumulé.
+    Renvoie une liste de dicts ``{"type": ...}``, le texte assistant accumulé,
+    et un dict ``{"input": int, "output": int}`` de tokens consommés dans ce chunk.
     """
     events = []
     text = ""
+    usage = {"input": 0, "output": 0}
     for node_state in chunk.values():
         for msg in node_state.get("messages", []):
             if isinstance(msg, AIMessage):
+                # Compteurs de tokens (LangChain expose usage_metadata).
+                meta = getattr(msg, "usage_metadata", None) or {}
+                usage["input"] += meta.get("input_tokens", 0)
+                usage["output"] += meta.get("output_tokens", 0)
+
                 for call in getattr(msg, "tool_calls", []) or []:
                     events.append(
                         {"type": "tool_call", "name": call["name"], "args": call.get("args", {})}
                     )
-                
                 if isinstance(msg.content, str) and msg.content.strip():
                     text += msg.content
                 elif isinstance(msg.content, list):
@@ -104,4 +121,4 @@ def updates_to_events(chunk: dict):
                 if len(preview) > 800:
                     preview = preview[:800] + " …(tronqué)"
                 events.append({"type": "tool_result", "name": msg.name, "preview": preview})
-    return events, text
+    return events, text, usage

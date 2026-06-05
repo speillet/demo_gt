@@ -10,64 +10,14 @@ exposés par les deux serveurs MCP (Géoportail IGN + QGIS) via
 from __future__ import annotations
 
 import json
-import os
 
-from langchain_core.language_models import BaseChatModel
 from langchain_core.tools import BaseTool, StructuredTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.prebuilt import create_react_agent
 
+from llm import build_model, build_model_by_id
 from mcp_servers import get_mcp_servers_config
 from prompts import build_system_prompt
-from config import (
-    DEFAULT_ANTHROPIC_MODEL,
-    DEFAULT_OPENROUTER_MODEL,
-    OPENROUTER_BASE_URL,
-    LLM_PROVIDER,
-    OPENROUTER_API_KEY,
-)
-
-def build_model() -> BaseChatModel:
-    """Instancie le modèle de chat selon le fournisseur configuré.
-
-    Sélection (variable ``LLM_PROVIDER`` : "openrouter" | "anthropic" | absente) :
-    - OpenRouter si ``LLM_PROVIDER=openrouter`` ou, en auto, dès que
-      ``OPENROUTER_API_KEY`` est défini (modèle via ``OPENROUTER_MODEL``) ;
-    - Anthropic sinon (modèle via ``LLM_MODEL``).
-
-    Les imports des SDK sont paresseux pour ne pas exiger les deux à la fois.
-    """
-    provider = LLM_PROVIDER
-    use_openrouter = provider == "openrouter" or (
-        provider is None and OPENROUTER_API_KEY
-    )
-
-    if use_openrouter:
-        from langchain_openai import ChatOpenAI
-
-        api_key = OPENROUTER_API_KEY
-        if not api_key:
-            raise ValueError(
-                "La clé OPENROUTER_API_KEY est manquante "
-                "alors que le fournisseur configuré/détecté est OpenRouter."
-            )
-
-        return ChatOpenAI(
-            model=DEFAULT_OPENROUTER_MODEL,
-            base_url=OPENROUTER_BASE_URL,
-            api_key=api_key,
-            temperature=0,
-            max_tokens=8192,
-            default_headers={"X-Title": "demo_gt"},  # classement OpenRouter (optionnel)
-        )
-
-    from langchain_anthropic import ChatAnthropic
-
-    return ChatAnthropic(
-        model=DEFAULT_ANTHROPIC_MODEL,
-        temperature=0,
-        max_tokens=8192,
-    )
 
 
 def _flatten_tool_result(result) -> str:
@@ -130,4 +80,15 @@ async def build_agent():
     # On garde une référence au client sur l'agent pour éviter qu'il soit
     # garbage-collecté (ce qui fermerait les sous-processus MCP).
     agent._mcp_client = client  # type: ignore[attr-defined]
-    return agent, tools
+    return agent, tools, client
+
+
+def rebuild_agent_with_model(model_id: str, tools: list[BaseTool], client):
+    """Reconstruit l'agent avec un modèle différent, en réutilisant les outils MCP existants."""
+    agent = create_react_agent(
+        build_model_by_id(model_id),
+        tools,
+        prompt=build_system_prompt(),
+    )
+    agent._mcp_client = client  # type: ignore[attr-defined]
+    return agent

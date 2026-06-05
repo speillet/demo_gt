@@ -10,11 +10,8 @@ une file thread-safe consommée en streaming par la route `/chat`.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
-import queue
-import threading
 
 from flask import (
     Flask,
@@ -26,13 +23,36 @@ from flask import (
     request,
     send_from_directory,
 )
-from langchain_core.messages import AIMessage, ToolMessage
 
 from conversations import ConversationStore
+from services import agent_service
+from services.agent_service import get_runtime, updates_to_events
+from llm import resolve_provider_name, get_active_model, set_active_model, list_available_models
+
+# ── Grille tarifaire par modèle ($ / million de tokens) ────────────────────────
+# Clé = début du nom de modèle (préfixe). Valeurs = (input, output) en $/Mtok.
+MODEL_PRICING: dict[str, tuple[float, float]] = {
+    "claude-sonnet-4":      (3.0,  15.0),
+    "claude-opus-4":        (15.0, 75.0),
+    "claude-3-5-sonnet":    (3.0,  15.0),
+    "claude-3-5-haiku":     (0.80, 4.0),
+    "gpt-4o":               (2.50, 10.0),
+    "gpt-4.1":              (2.0,  8.0),
+    "o4-mini":              (1.10, 4.40),
+    "deepseek/deepseek-v4": (0.50, 1.50),
+    "deepseek/deepseek-chat": (0.27, 1.10),
+}
+
+
+def _estimate_cost(input_tokens: int, output_tokens: int) -> float | None:
+    """Estime le coût en dollars à partir du modèle actif."""
+    model = get_active_model()
+    for prefix, (inp_price, out_price) in MODEL_PRICING.items():
+        if model.startswith(prefix):
+            return (input_tokens * inp_price + output_tokens * out_price) / 1_000_000
+    return None
 
 conversation_store = ConversationStore()
-from services.agent_service import AgentRuntime, get_runtime, updates_to_events
-
 
 app = Flask(__name__)
 
@@ -46,15 +66,32 @@ def index():
     return resp
 
 
-import services.agent_service
-
 @app.post("/stop")
 def stop():
     # Annule le tour en cours sans toucher à l'historique ni aux serveurs MCP.
-    runtime = services.agent_service._runtime
-    if runtime is not None:
-        runtime.cancel_current()
+    agent_service.cancel_current()
     return ("", 204)
+
+
+# ── Modèles ────────────────────────────────────────────────────────────────────
+@app.get("/models")
+def models_list():
+    return jsonify(list_available_models())
+
+
+@app.post("/model")
+def model_switch():
+    data = request.get_json(silent=True) or {}
+    model_id = (data.get("model") or "").strip()
+    if not model_id:
+        return jsonify({"error": "model manquant"}), 400
+    try:
+        runtime = get_runtime()
+        runtime.switch_model(model_id)
+        set_active_model(model_id)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({"model": model_id})
 
 
 # ── Conversations ──────────────────────────────────────────────────────────────
@@ -122,6 +159,8 @@ def chat():
 
         final_text = ""
         stopped = False
+        total_input = 0
+        total_output = 0
         try:
             runtime = get_runtime()
             for kind, payload in runtime.stream_turn(turn_messages):
@@ -133,12 +172,19 @@ def chat():
                     stopped = True
                     yield sse({"type": "stopped"})
                     break
-                events, text = updates_to_events(payload)
+                events, text, usage = updates_to_events(payload)
+                total_input += usage["input"]
+                total_output += usage["output"]
                 for evt in events:
                     yield sse(evt)
                 final_text += text
             if not stopped:
-                yield sse({"type": "final", "text": final_text or "(aucune réponse texte)"})
+                cost = _estimate_cost(total_input, total_output)
+                yield sse({
+                    "type": "final",
+                    "text": final_text or "(aucune réponse texte)",
+                    "usage": {"input_tokens": total_input, "output_tokens": total_output, "cost": cost},
+                })
         except Exception as exc:  # pragma: no cover - garde-fou
             yield sse({"type": "error", "message": str(exc)})
             final_text = final_text or f"❌ Erreur : {exc}"

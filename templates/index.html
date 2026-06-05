@@ -124,6 +124,48 @@
     }
     header button:hover { border-color: var(--accent); color: var(--accent); }
 
+    /* ── Switches (verbosité + thème) ─────────────────────────────────────── */
+    .switches { display: flex; flex-direction: column; gap: 6px; }
+
+    /* ── Sélecteur de modèle ─────────────────────────────────────────── */
+    .model-select {
+      font-size: .78rem; padding: 5px 8px; border: 1px solid var(--border);
+      border-radius: 8px; background: var(--input-bg); color: var(--text);
+      outline: none; cursor: pointer; max-width: 180px;
+      transition: border-color .15s;
+    }
+    .model-select:focus { border-color: var(--accent); }
+    .model-select:disabled { opacity: .5; cursor: default; }
+    .switch-row {
+      display: flex; align-items: center; gap: 8px; font-size: .78rem; color: var(--muted);
+      white-space: nowrap; user-select: none;
+    }
+    .switch-row .switch-label { min-width: 52px; text-align: right; }
+    .switch-track {
+      position: relative; width: 36px; height: 20px; flex: none;
+      background: var(--border); border-radius: 10px; cursor: pointer;
+      transition: background .2s;
+    }
+    .switch-track.on { background: var(--accent); }
+    .switch-track .switch-thumb {
+      position: absolute; top: 2px; left: 2px;
+      width: 16px; height: 16px; border-radius: 50%;
+      background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2);
+      transition: transform .2s;
+    }
+    .switch-track.on .switch-thumb { transform: translateX(16px); }
+    .switch-row .switch-icon { font-size: .9rem; line-height: 1; }
+
+    /* ── Badge coût par requête ─────────────────────────────────────────── */
+    .cost-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      margin-top: 4px; padding: 2px 8px;
+      font-size: .65rem; color: var(--muted); opacity: .55;
+      transition: opacity .2s;
+    }
+    .cost-badge:hover { opacity: 1; }
+    .cost-badge .cost-val { font-weight: 600; }
+
     main {
       max-width: var(--content-max); margin: 0 auto;
       padding: 20px 24px calc(var(--input-h) + 24px);
@@ -184,6 +226,14 @@
     .step .res { color: var(--muted); white-space: pre-wrap; }
 
     .typing { color: var(--muted); font-style: italic; }
+
+    /* ── Indicateur de travail : spinner globe SVG + verbe rotatif ────── */
+    .working { display: inline-flex; align-items: center; gap: 9px; color: var(--muted); font-style: italic; }
+    .spinner-globe { width: 28px; height: 28px; flex: none; }
+    .spinner-globe object { width: 100%; height: 100%; pointer-events: none; }
+
+    /* Mode concis : on masque les étapes (appels/résultats d'outils) */
+    :root[data-verbose="0"] .steps { display: none; }
 
     .composer {
       position: fixed; left: var(--side-w); right: 0; bottom: 0; z-index: 5;
@@ -269,11 +319,12 @@
     }
   </style>
   <script>
-    // Applique le thème avant le rendu pour éviter un flash de couleur.
+    // Applique le thème + le mode verbeux avant le rendu (évite tout flash).
     (function () {
       var t = localStorage.getItem("theme")
         || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
       document.documentElement.setAttribute("data-theme", t);
+      document.documentElement.dataset.verbose = localStorage.getItem("verbose") || "1";
     })();
   </script>
 </head>
@@ -296,7 +347,25 @@
         <span class="tagline">Géoportail IGN × QGIS</span>
       </div>
       <span class="sub">QGIS ouvert + plugin « Start Server » requis</span>
-      <button id="theme" title="Changer de thème">🌙</button>
+      <select id="model-select" class="model-select" title="Modèle LLM">
+        <option>Chargement…</option>
+      </select>
+      <div class="switches">
+        <div class="switch-row">
+          <span class="switch-label">Détails</span>
+          <div id="verbose" class="switch-track" role="switch" tabindex="0" title="Afficher / masquer les étapes de l'agent">
+            <span class="switch-thumb"></span>
+          </div>
+          <span class="switch-icon" id="verbose-icon">👁</span>
+        </div>
+        <div class="switch-row">
+          <span class="switch-label">Sombre</span>
+          <div id="theme" class="switch-track" role="switch" tabindex="0" title="Thème clair / sombre">
+            <span class="switch-thumb"></span>
+          </div>
+          <span class="switch-icon" id="theme-icon">🌙</span>
+        </div>
+      </div>
     </header>
 
     <main id="messages"></main>
@@ -315,12 +384,14 @@
     const $prompt = document.getElementById("prompt");
     const $send = document.getElementById("send");
     const $theme = document.getElementById("theme");
+    const $verbose = document.getElementById("verbose");
     const $newConv = document.getElementById("new-conv");
     const $convList = document.getElementById("conv-list");
     const $fileList = document.getElementById("file-list");
     const $sidebar = document.querySelector(".sidebar");
     const $sideToggle = document.getElementById("side-toggle");
     const $overlay = document.getElementById("overlay");
+    const $modelSelect = document.getElementById("model-select");
 
     let activeId = null;
 
@@ -330,11 +401,53 @@
     $sideToggle.addEventListener("click", openSidebar);
     $overlay.addEventListener("click", closeSidebar);
 
+    // ── Sélecteur de modèle ─────────────────────────────────────────────────
+    async function loadModels() {
+      try {
+        const models = await (await fetch("/models")).json();
+        $modelSelect.innerHTML = "";
+        for (const m of models) {
+          const opt = document.createElement("option");
+          opt.value = m.id;
+          opt.textContent = m.label;
+          if (m.active) opt.selected = true;
+          $modelSelect.appendChild(opt);
+        }
+      } catch (e) {
+        $modelSelect.innerHTML = '<option>Erreur</option>';
+      }
+    }
+    $modelSelect.addEventListener("change", async () => {
+      const id = $modelSelect.value;
+      $modelSelect.disabled = true;
+      try {
+        const resp = await fetch("/model", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model: id }),
+        });
+        if (!resp.ok) {
+          const err = await resp.json();
+          alert("Erreur changement de modèle : " + (err.error || resp.status));
+          await loadModels();  // remet la sélection précédente
+        }
+      } catch (e) {
+        alert("Erreur réseau : " + e);
+        await loadModels();
+      } finally {
+        $modelSelect.disabled = false;
+      }
+    });
+    loadModels();
+
     // ── Thème clair / sombre ────────────────────────────────────────────────
+    const $themeIcon = document.getElementById("theme-icon");
     function applyTheme(t) {
       document.documentElement.setAttribute("data-theme", t);
-      $theme.textContent = t === "dark" ? "☀️" : "🌙";
-      $theme.title = t === "dark" ? "Passer en mode clair" : "Passer en mode sombre";
+      const isDark = t === "dark";
+      $theme.classList.toggle("on", isDark);
+      $theme.setAttribute("aria-checked", isDark);
+      $themeIcon.textContent = isDark ? "☀️" : "🌙";
     }
     applyTheme(document.documentElement.getAttribute("data-theme") || "light");
     $theme.addEventListener("click", () => {
@@ -342,6 +455,34 @@
       localStorage.setItem("theme", next);
       applyTheme(next);
     });
+    $theme.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $theme.click(); } });
+
+    // ── Mode verbeux / concis ───────────────────────────────────────────────
+    const $verboseIcon = document.getElementById("verbose-icon");
+    function applyVerbose(v) {
+      document.documentElement.dataset.verbose = v;
+      const on = v === "1";
+      $verbose.classList.toggle("on", on);
+      $verbose.setAttribute("aria-checked", on);
+      $verboseIcon.textContent = on ? "👁" : "🙈";
+    }
+    applyVerbose(document.documentElement.dataset.verbose || "1");
+    $verbose.addEventListener("click", () => {
+      const next = document.documentElement.dataset.verbose === "1" ? "0" : "1";
+      localStorage.setItem("verbose", next);
+      applyVerbose(next);
+    });
+    $verbose.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $verbose.click(); } });
+
+    // Verbes rigolos affichés pendant que l'agent travaille (clin d'œil au
+    // spinner-verbs-dictionary). Liste librement éditable.
+    const VERBS = [
+      "Combobulation…", "Triangulation…", "Géo-cogitation…", "Cartographie…",
+      "Moulinage…", "Percolation…", "Réticulation…", "Pérégrination…",
+      "Tergiversation…", "Frobnication…", "Cogitation…", "Élucubration…",
+      "Topographie…", "Géoschmilblickage…", "Cadastration…", "Vectorisation…",
+    ];
+    const pickVerb = () => VERBS[Math.floor(Math.random() * VERBS.length)];
 
     function escapeHtml(s) {
       return s.replace(/[&<>"']/g, c => ({
@@ -514,8 +655,13 @@
     async function deleteConversation(id) {
       if (!confirm("Supprimer cette conversation et ses fichiers ?")) return;
       await fetch(`/conversations/${id}`, { method: "DELETE" });
-      if (id === activeId) activeId = null;
-      await loadConversations(true);
+      if (id === activeId) {
+        activeId = null;
+        showWelcome();
+        renderFiles([]);
+      }
+      const list = await (await fetch("/conversations")).json();
+      renderConvList(list);
     }
 
     // ── Rendu des messages ──────────────────────────────────────────────────
@@ -550,15 +696,30 @@
       steps.appendChild(sum);
 
       const bubble = document.createElement("div");
-      bubble.className = "bubble typing";
-      bubble.textContent = "L'agent travaille…";
+      bubble.className = "bubble";
+      // Indicateur de travail : spinner « planète » + verbe rotatif.
+      const verb = document.createElement("span");
+      verb.className = "verb";
+      verb.textContent = pickVerb();
+      const work = document.createElement("span");
+      work.className = "working";
+      work.innerHTML = '<span class="spinner-globe"><object data="{{ url_for("static", filename="spinner_animation.svg") }}" type="image/svg+xml"></object></span>';
+      work.appendChild(verb);
+      bubble.appendChild(work);
 
       col.appendChild(steps);
       col.appendChild(bubble);
       wrap.appendChild(col);
       $messages.appendChild(wrap);
       scrollDown();
-      return { steps, bubble };
+
+      const ui = { steps, bubble, col };
+      ui.timer = setInterval(() => { verb.textContent = pickVerb(); }, 2500);
+      return ui;
+    }
+
+    function stopWorking(ui) {
+      if (ui && ui.timer) { clearInterval(ui.timer); ui.timer = null; }
     }
 
     function addStep(steps, html) {
@@ -583,15 +744,30 @@
           `↳ <em>${escapeHtml(evt.name || "")}</em> : ` +
           `<span class="res">${escapeHtml(evt.preview || "")}</span>`);
       } else if (evt.type === "final") {
-        ui.bubble.classList.remove("typing");
+        stopWorking(ui);
         ui.bubble.classList.add("md");
         ui.bubble.innerHTML = renderMarkdown(evt.text);
+        // Affiche le coût / tokens si disponible.
+        if (evt.usage) {
+          const u = evt.usage;
+          const parts = [];
+          if (u.input_tokens || u.output_tokens)
+            parts.push(`${(u.input_tokens || 0).toLocaleString("fr-FR")} tokens in · ${(u.output_tokens || 0).toLocaleString("fr-FR")} tokens out`);
+          if (u.cost != null)
+            parts.push(`<span class="cost-val">${u.cost < 0.01 ? u.cost.toFixed(4) : u.cost.toFixed(3)} $</span>`);
+          if (parts.length) {
+            const badge = document.createElement("div");
+            badge.className = "cost-badge";
+            badge.innerHTML = "💸 " + parts.join(" — ");
+            ui.col.appendChild(badge);
+          }
+        }
         scrollDown();
       } else if (evt.type === "stopped") {
-        ui.bubble.classList.remove("typing");
+        stopWorking(ui);
         ui.bubble.textContent = "⏹ Travail de l'agent interrompu.";
       } else if (evt.type === "error") {
-        ui.bubble.classList.remove("typing");
+        stopWorking(ui);
         ui.bubble.textContent = "❌ " + evt.message;
       }
     }
@@ -661,13 +837,14 @@
           }
         }
       } catch (e) {
-        ui.bubble.classList.remove("typing");
+        stopWorking(ui);
         if (e.name === "AbortError") {
           ui.bubble.textContent = "⏹ Travail de l'agent interrompu.";
         } else {
           ui.bubble.textContent = "❌ Erreur réseau : " + e;
         }
       } finally {
+        stopWorking(ui);
         setWorking(false);
         controller = null;
         await refreshAfterTurn();

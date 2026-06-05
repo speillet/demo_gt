@@ -150,12 +150,12 @@ class ConversationStore:
             return None
         base = self._conv_dir(conv_id).resolve()
         full = (base / name).resolve()
-        
-        # empêcher la traversée
-        if not str(full).startswith(str(base)):
+
+        # Empêcher la traversée : ``full`` doit être strictement DANS ``base``
+        # (is_relative_to évite le faux positif d'un dossier frère de même préfixe).
+        if full == base or not full.is_relative_to(base):
             return None
-            
-        if str(full) == str(base) or full.name == self.meta_file or not full.is_file():
+        if full.name == self.meta_file or not full.is_file():
             return None
         return str(full)
 
