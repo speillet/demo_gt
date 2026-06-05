@@ -17,14 +17,15 @@ from langchain_core.tools import BaseTool, StructuredTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.prebuilt import create_react_agent
 
-from mcp_servers import SERVERS
+from mcp_servers import get_mcp_servers_config
 from prompts import build_system_prompt
-
-# Modèles par défaut selon le fournisseur.
-DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-6"
-DEFAULT_OPENROUTER_MODEL = "deepseek/deepseek-v4-pro"
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-
+from config import (
+    DEFAULT_ANTHROPIC_MODEL,
+    DEFAULT_OPENROUTER_MODEL,
+    OPENROUTER_BASE_URL,
+    LLM_PROVIDER,
+    OPENROUTER_API_KEY,
+)
 
 def build_model() -> BaseChatModel:
     """Instancie le modèle de chat selon le fournisseur configuré.
@@ -36,15 +37,15 @@ def build_model() -> BaseChatModel:
 
     Les imports des SDK sont paresseux pour ne pas exiger les deux à la fois.
     """
-    provider = os.environ.get("LLM_PROVIDER")
+    provider = LLM_PROVIDER
     use_openrouter = provider == "openrouter" or (
-        provider is None and os.environ.get("OPENROUTER_API_KEY")
+        provider is None and OPENROUTER_API_KEY
     )
 
     if use_openrouter:
         from langchain_openai import ChatOpenAI
 
-        api_key = os.environ.get("OPENROUTER_API_KEY")
+        api_key = OPENROUTER_API_KEY
         if not api_key:
             raise ValueError(
                 "La clé OPENROUTER_API_KEY est manquante "
@@ -52,7 +53,7 @@ def build_model() -> BaseChatModel:
             )
 
         return ChatOpenAI(
-            model=os.environ.get("OPENROUTER_MODEL", DEFAULT_OPENROUTER_MODEL),
+            model=DEFAULT_OPENROUTER_MODEL,
             base_url=OPENROUTER_BASE_URL,
             api_key=api_key,
             temperature=0,
@@ -63,7 +64,7 @@ def build_model() -> BaseChatModel:
     from langchain_anthropic import ChatAnthropic
 
     return ChatAnthropic(
-        model=os.environ.get("LLM_MODEL", DEFAULT_ANTHROPIC_MODEL),
+        model=DEFAULT_ANTHROPIC_MODEL,
         temperature=0,
         max_tokens=8192,
     )
@@ -119,7 +120,7 @@ async def build_agent():
     À appeler une seule fois, sur la boucle asyncio dédiée. Les sessions stdio
     restent ouvertes tant que la boucle vit.
     """
-    client = MultiServerMCPClient(SERVERS)
+    client = MultiServerMCPClient(get_mcp_servers_config())
     tools = [_text_only_tool(t) for t in await client.get_tools()]
     agent = create_react_agent(
         build_model(),

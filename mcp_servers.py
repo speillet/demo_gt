@@ -17,9 +17,7 @@ from __future__ import annotations
 import os
 import shutil
 
-# Commit épinglé de nkarasiak/qgis-mcp (sert au repli uvx + à `uv tool install`).
-QGIS_MCP_REF = "599de023a60f6ff0d477d8b75806259a29d7e88c"
-
+from config import QGIS_MCP_REF, GEOPORTAIL_URL
 
 def _qgis_command() -> tuple[str, list[str]]:
     """Détermine comment lancer le serveur MCP QGIS.
@@ -44,20 +42,26 @@ def _qgis_command() -> tuple[str, list[str]]:
     ]
 
 
-_qgis_cmd, _qgis_args = _qgis_command()
+def get_mcp_servers_config() -> dict[str, dict]:
+    """Retourne la configuration des serveurs MCP formatée pour MultiServerMCPClient.
 
-# Config au format attendu par MultiServerMCPClient.
-SERVERS: dict[str, dict] = {
-    # Instance HTTP hébergée par l'IGN (transport streamable_http) : aucun Node/npm
-    # requis, jointe via le proxy IGN. Alternative locale : command "npx",
-    # args ["-y", "@ignfab/geocontext"], transport "stdio" (nécessite Node ≥ 22).
-    "geoportail": {
-        "url": "https://geollm.beta.ign.fr/geocontext/mcp",
-        "transport": "streamable_http",
-    },
-    "qgis": {
-        "command": _qgis_cmd,
-        "args": _qgis_args,
-        "transport": "stdio",
-    },
-}
+    On calcule les chemins (ex: `_qgis_command`) au moment de l'appel, et non
+    à l'import du module, pour plus de fiabilité et flexibilité.
+    """
+    _qgis_cmd, _qgis_args = _qgis_command()
+
+    # Config au format attendu par MultiServerMCPClient.
+    return {
+        # Instance HTTP hébergée par l'IGN (transport streamable_http) : aucun Node/npm
+        # requis, jointe via le proxy IGN. Alternative locale : command "npx",
+        # args ["-y", "@ignfab/geocontext"], transport "stdio" (nécessite Node ≥ 22).
+        "geoportail": {
+            "url": GEOPORTAIL_URL,
+            "transport": "streamable_http",
+        },
+        "qgis": {
+            "command": _qgis_cmd,
+            "args": _qgis_args,
+            "transport": "stdio",
+        },
+    }
