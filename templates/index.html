@@ -227,10 +227,18 @@
 
     .typing { color: var(--muted); font-style: italic; }
 
-    /* ── Indicateur de travail : spinner globe SVG + verbe rotatif ────── */
+    /* ── Indicateur de travail : spinner « planète » + verbe rotatif ────── */
     .working { display: inline-flex; align-items: center; gap: 9px; color: var(--muted); font-style: italic; }
-    .spinner-globe { width: 28px; height: 28px; flex: none; }
-    .spinner-globe object { width: 100%; height: 100%; pointer-events: none; }
+    .planet { position: relative; width: 20px; height: 20px; flex: none; }
+    .planet .core { position: absolute; inset: 5px; border-radius: 50%; background: #4caf50; }
+    .planet .orbit { position: absolute; inset: 0; animation: planet-spin 1.4s linear infinite; }
+    .planet .orbit::before {
+      content: ""; position: absolute; top: -1px; left: 50%;
+      width: 6px; height: 6px; border-radius: 50%; background: #2e7d32;
+      transform: translateX(-50%);
+    }
+    @keyframes planet-spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .planet .orbit { animation-duration: 4s; } }
 
     /* Mode concis : on masque les étapes (appels/résultats d'outils) */
     :root[data-verbose="0"] .steps { display: none; }
@@ -588,12 +596,13 @@
       for (const c of list) {
         const row = document.createElement("div");
         row.className = "conv" + (c.id === activeId ? " active" : "");
+        const canDelete = list.length > 1;
         row.innerHTML =
           `<div class="meta"><div class="title">${escapeHtml(c.title)}</div>` +
           `<div class="date">${fmtDate(c.updated_at)} · ${c.message_count} msg · ${c.file_count} fich.</div></div>` +
-          `<button class="del" title="Supprimer">🗑</button>`;
+          (canDelete ? `<button class="del" title="Supprimer">✕</button>` : "");
         row.querySelector(".meta").addEventListener("click", () => openConversation(c.id));
-        row.querySelector(".del").addEventListener("click", (e) => { e.stopPropagation(); deleteConversation(c.id); });
+        if (canDelete) row.querySelector(".del").addEventListener("click", (e) => { e.stopPropagation(); deleteConversation(c.id); });
         $convList.appendChild(row);
       }
     }
@@ -703,7 +712,7 @@
       verb.textContent = pickVerb();
       const work = document.createElement("span");
       work.className = "working";
-      work.innerHTML = '<span class="spinner-globe"><object data="{{ url_for("static", filename="spinner_animation.svg") }}" type="image/svg+xml"></object></span>';
+      work.innerHTML = '<span class="planet"><span class="orbit"></span><span class="core"></span></span>';
       work.appendChild(verb);
       bubble.appendChild(work);
 
@@ -752,7 +761,7 @@
           const u = evt.usage;
           const parts = [];
           if (u.input_tokens || u.output_tokens)
-            parts.push(`${(u.input_tokens || 0).toLocaleString("fr-FR")} tokens in · ${(u.output_tokens || 0).toLocaleString("fr-FR")} tokens out`);
+            parts.push(`${(u.input_tokens || 0).toLocaleString("fr-FR")} tokens IN · ${(u.output_tokens || 0).toLocaleString("fr-FR")} tokens OUT`);
           if (u.cost != null)
             parts.push(`<span class="cost-val">${u.cost < 0.01 ? u.cost.toFixed(4) : u.cost.toFixed(3)} $</span>`);
           if (parts.length) {
@@ -804,7 +813,14 @@
 
     async function send() {
       const text = $prompt.value.trim();
-      if (!text || !activeId) return;
+      if (!text) return;
+      // Crée automatiquement une conversation si aucune n'est active.
+      if (!activeId) {
+        const meta = await (await fetch("/conversations", { method: "POST" })).json();
+        activeId = meta.id;
+        const list = await (await fetch("/conversations")).json();
+        renderConvList(list);
+      }
       $prompt.value = "";
       autoGrow();
 
