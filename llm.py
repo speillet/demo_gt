@@ -74,22 +74,37 @@ PROVIDERS: dict[str, Provider] = {}
 
 # Catalogue des modèles proposés par fournisseur (ceux affichés dans le sélecteur).
 # Chaque entrée : (identifiant affiché, nom technique envoyé à l'API).
+# Le 1er de chaque liste sert de défaut. Tous compatibles « tool calling ».
 MODELS_CATALOG: dict[str, list[tuple[str, str]]] = {
+    # Vérifiés sur https://openrouter.ai/models (juin 2026).
     "openrouter": [
+        # — Performants —
         ("DeepSeek V4 Pro", "deepseek/deepseek-v4-pro"),
-        ("DeepSeek Chat", "deepseek/deepseek-chat"),
-        ("Claude Sonnet 4", "anthropic/claude-sonnet-4-20250514"),
-        ("GPT-4o", "openai/gpt-4o"),
+        ("Claude Opus 4.8", "anthropic/claude-opus-4.8"),
+        ("GPT-5.5", "openai/gpt-5.5"),
+        ("GPT-5.5 Pro", "openai/gpt-5.5-pro"),
+        ("Grok 4.3", "x-ai/grok-4.3"),
+        ("Qwen3.7 Max", "qwen/qwen3.7-max"),
+        ("Mistral Medium 3.5", "mistralai/mistral-medium-3.5"),
+        # — Rapides / économiques —
+        ("DeepSeek V4 Flash", "deepseek/deepseek-v4-flash"),
+        ("GPT-5.4 Mini", "openai/gpt-5.4-mini"),
+        ("Gemini 3.5 Flash", "google/gemini-3.5-flash"),
+        ("Claude Opus 4.8 (Fast)", "anthropic/claude-opus-4.8-fast"),
+        ("Qwen3.7 Plus", "qwen/qwen3.7-plus"),
     ],
+    # Identifiants de l'API native Anthropic.
     "anthropic": [
-        ("Claude Sonnet 4", "claude-sonnet-4-20250514"),
-        ("Claude Opus 4", "claude-opus-4-20250514"),
-        ("Claude 3.5 Haiku", "claude-3-5-haiku-20241022"),
+        ("Claude Sonnet 4.6", "claude-sonnet-4-6"),
+        ("Claude Opus 4.8", "claude-opus-4-8"),
+        ("Claude Haiku 4.5", "claude-haiku-4-5-20251001"),
     ],
+    # Identifiants de l'API native OpenAI.
     "openai": [
+        ("GPT-5.5", "gpt-5.5"),
+        ("GPT-5.5 Pro", "gpt-5.5-pro"),
+        ("GPT-5.4 Mini", "gpt-5.4-mini"),
         ("GPT-4o", "gpt-4o"),
-        ("GPT-4.1", "gpt-4.1"),
-        ("o4-mini", "o4-mini"),
     ],
     "github_copilot": [
         ("GPT-4o", "gpt-4o"),
