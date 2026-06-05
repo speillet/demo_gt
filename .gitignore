@@ -18,3 +18,7 @@ data/*
 # OS / IDE
 .DS_Store
 .streamlit/secrets.toml
+
+# Artefacts d'outils IA
+.kilo/
+.claude/
