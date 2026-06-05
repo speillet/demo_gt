@@ -26,6 +26,7 @@
       --logo: url("{{ url_for('static', filename='IGN_logo_2012.svg.png') }}");
       --input-h: 96px;
       --side-w: 264px;
+      --content-max: 1080px;
     }
     /* ── Thème sombre ─────────────────────────────────────────────────────── */
     :root[data-theme="dark"] {
@@ -57,12 +58,16 @@
 
     /* ── Panneau latéral ──────────────────────────────────────────────────── */
     .sidebar {
-      position: fixed; top: 0; left: 0; bottom: 0; width: var(--side-w); z-index: 6;
+      position: fixed; top: 0; left: 0; bottom: 0; width: var(--side-w); z-index: 20;
       background: var(--surface);
       backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
       border-right: 1px solid var(--border);
       display: flex; flex-direction: column; padding: 12px; gap: 10px;
+      transition: transform .25s ease;
     }
+    /* Bouton d'ouverture du panneau (visible seulement sur petits écrans) */
+    #side-toggle { display: none; }
+    .overlay { display: none; }
     .sidebar h2 {
       font-size: .72rem; text-transform: uppercase; letter-spacing: .04em;
       color: var(--muted); margin: 4px 4px;
@@ -120,21 +125,49 @@
     header button:hover { border-color: var(--accent); color: var(--accent); }
 
     main {
-      max-width: 820px; margin: 0 auto;
-      padding: 20px 16px calc(var(--input-h) + 24px);
+      max-width: var(--content-max); margin: 0 auto;
+      padding: 20px 24px calc(var(--input-h) + 24px);
     }
 
     .msg { display: flex; margin: 14px 0; }
     .msg.user { justify-content: flex-end; }
     .bubble {
-      max-width: 78%; padding: 11px 14px; border-radius: 14px;
+      max-width: 88%; padding: 11px 14px; border-radius: 14px;
       line-height: 1.45; white-space: pre-wrap; word-wrap: break-word;
       box-shadow: var(--shadow);
     }
     .msg.user .bubble { background: var(--bubble-user); color: #fff; border-bottom-right-radius: 4px; }
     .msg.bot .bubble { background: var(--bubble-bot); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
-    .bubble table { border-collapse: collapse; }
-    .bubble th, .bubble td { border: 1px solid var(--border); padding: 4px 8px; }
+
+    /* ── Contenu markdown rendu ───────────────────────────────────────────── */
+    .bubble.md { white-space: normal; }
+    .bubble.md > :first-child { margin-top: 0; }
+    .bubble.md > :last-child { margin-bottom: 0; }
+    .bubble.md p { margin: .5em 0; }
+    .bubble.md h1, .bubble.md h2, .bubble.md h3, .bubble.md h4 { margin: .7em 0 .35em; line-height: 1.25; }
+    .bubble.md h1 { font-size: 1.3em; }
+    .bubble.md h2 { font-size: 1.18em; }
+    .bubble.md h3 { font-size: 1.06em; }
+    .bubble.md h4 { font-size: 1em; }
+    .bubble.md ul, .bubble.md ol { margin: .4em 0; padding-left: 1.4em; }
+    .bubble.md li { margin: .15em 0; }
+    .bubble.md a { color: var(--accent); text-decoration: underline; }
+    .bubble.md code {
+      background: var(--code-bg); padding: 1px 5px; border-radius: 5px;
+      font-size: .88em; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    .bubble.md pre {
+      background: var(--code-bg); padding: 10px 12px; border-radius: 10px;
+      overflow-x: auto; margin: .5em 0;
+    }
+    .bubble.md pre code { background: none; padding: 0; font-size: .85em; }
+    .bubble.md blockquote {
+      margin: .5em 0; padding: .2em .9em; border-left: 3px solid var(--border); color: var(--muted);
+    }
+    .bubble.md hr { border: none; border-top: 1px solid var(--border); margin: .8em 0; }
+    .bubble table { border-collapse: collapse; margin: .5em 0; font-size: .95em; }
+    .bubble th, .bubble td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
+    .bubble th { background: var(--steps-bg); }
 
     .steps {
       margin: 6px 0 0; border: 1px dashed var(--border); border-radius: 10px;
@@ -159,7 +192,7 @@
       border-top: 1px solid var(--border);
     }
     .composer .inner {
-      max-width: 820px; margin: 0 auto; padding: 14px 16px;
+      max-width: var(--content-max); margin: 0 auto; padding: 14px 24px;
       display: flex; gap: 10px; align-items: flex-end;
     }
     textarea#prompt {
@@ -212,6 +245,28 @@
       transition: border-color .15s, transform .1s;
     }
     .chip:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-1px); }
+
+    /* ── Responsive ───────────────────────────────────────────────────────── */
+    /* Écrans intermédiaires : panneau un peu plus étroit */
+    @media (max-width: 1100px) { :root { --side-w: 230px; } }
+
+    /* Petits écrans : panneau latéral coulissant (off-canvas) + bouton ☰ */
+    @media (max-width: 820px) {
+      .content { margin-left: 0; }
+      .composer { left: 0; }
+      main { padding-left: 14px; padding-right: 14px; }
+      .bubble { max-width: 94%; }
+      .sidebar { transform: translateX(-100%); box-shadow: 0 0 40px rgba(0, 0, 0, .35); }
+      .sidebar.open { transform: translateX(0); }
+      #side-toggle {
+        display: inline-flex; align-items: center; justify-content: center;
+        font-size: 1.2rem; line-height: 1; padding: 6px 10px;
+      }
+      .overlay.show {
+        display: block; position: fixed; inset: 0; z-index: 15;
+        background: rgba(0, 0, 0, .35);
+      }
+    }
   </style>
   <script>
     // Applique le thème avant le rendu pour éviter un flash de couleur.
@@ -230,9 +285,11 @@
     <h2>Fichiers de la conversation</h2>
     <div class="files"><div id="file-list" class="file-list"></div></div>
   </aside>
+  <div id="overlay" class="overlay"></div>
 
   <div class="content">
     <header>
+      <button id="side-toggle" title="Conversations">☰</button>
       <span class="logo" role="img" aria-label="IGN"></span>
       <div class="brand">
         <h1>Agent géospatial</h1>
@@ -261,8 +318,17 @@
     const $newConv = document.getElementById("new-conv");
     const $convList = document.getElementById("conv-list");
     const $fileList = document.getElementById("file-list");
+    const $sidebar = document.querySelector(".sidebar");
+    const $sideToggle = document.getElementById("side-toggle");
+    const $overlay = document.getElementById("overlay");
 
     let activeId = null;
+
+    // ── Panneau latéral coulissant (petits écrans) ──────────────────────────
+    function openSidebar() { $sidebar.classList.add("open"); $overlay.classList.add("show"); }
+    function closeSidebar() { $sidebar.classList.remove("open"); $overlay.classList.remove("show"); }
+    $sideToggle.addEventListener("click", openSidebar);
+    $overlay.addEventListener("click", closeSidebar);
 
     // ── Thème clair / sombre ────────────────────────────────────────────────
     function applyTheme(t) {
@@ -281,6 +347,77 @@
       return s.replace(/[&<>"']/g, c => ({
         "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
       }[c]));
+    }
+
+    // ── Mini-rendu Markdown (sûr : on échappe le HTML AVANT de formater) ─────
+    function mdInline(s) {
+      const codes = [];
+      s = s.replace(/`([^`]+)`/g, (m, c) => { codes.push(c); return "\u0001" + (codes.length - 1) + "\u0001"; });
+      s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, txt, url) => {
+        const plain = url.replace(/&amp;/g, "&");
+        if (!/^(https?:|mailto:|\/|#)/i.test(plain)) return m;  // refuse javascript:, etc.
+        return `<a href="${url}" target="_blank" rel="noopener noreferrer">${txt}</a>`;
+      });
+      s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+      s = s.replace(/__([^_]+)__/g, "<strong>$1</strong>");
+      s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+      s = s.replace(/~~([^~]+)~~/g, "<del>$1</del>");
+      s = s.replace(/\u0001(\d+)\u0001/g, (m, i) => "<code>" + codes[i] + "</code>");
+      return s;
+    }
+    function mdRow(s) {
+      return s.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map(c => c.trim());
+    }
+    function renderMarkdown(src) {
+      src = (src || "").replace(/\r\n?/g, "\n");
+      const blocks = [];
+      src = src.replace(/```[^\n]*\n([\s\S]*?)```/g, (m, code) => {
+        blocks.push("<pre><code>" + escapeHtml(code.replace(/\n+$/, "")) + "</code></pre>");
+        return "\u0002" + (blocks.length - 1) + "\u0002";
+      });
+      src = escapeHtml(src);
+      const lines = src.split("\n");
+      let html = "", i = 0, para = [];
+      const flush = () => { if (para.length) { html += "<p>" + mdInline(para.join(" ")) + "</p>"; para = []; } };
+      while (i < lines.length) {
+        const line = lines[i], t = line.trim();
+        if (/^\u0002\d+\u0002$/.test(t)) { flush(); html += t; i++; continue; }
+        if (t === "") { flush(); i++; continue; }
+        let m = /^(#{1,6})\s+(.*)$/.exec(t);
+        if (m) { flush(); const l = m[1].length; html += `<h${l}>${mdInline(m[2])}</h${l}>`; i++; continue; }
+        if (/^(-{3,}|\*{3,}|_{3,})$/.test(t)) { flush(); html += "<hr>"; i++; continue; }
+        if (t.includes("|") && i + 1 < lines.length &&
+            /-/.test(lines[i + 1]) && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i + 1])) {
+          flush();
+          const header = mdRow(t); i += 2;
+          const rows = [];
+          while (i < lines.length && lines[i].includes("|") && lines[i].trim() !== "") { rows.push(mdRow(lines[i].trim())); i++; }
+          html += "<table><thead><tr>" + header.map(c => `<th>${mdInline(c)}</th>`).join("") + "</tr></thead><tbody>" +
+            rows.map(r => "<tr>" + r.map(c => `<td>${mdInline(c)}</td>`).join("") + "</tr>").join("") + "</tbody></table>";
+          continue;
+        }
+        if (/^&gt;\s?/.test(t)) {
+          flush(); const q = [];
+          while (i < lines.length && /^&gt;\s?/.test(lines[i].trim())) { q.push(lines[i].trim().replace(/^&gt;\s?/, "")); i++; }
+          html += "<blockquote>" + q.map(mdInline).join("<br>") + "</blockquote>";
+          continue;
+        }
+        if (/^[-*+]\s+/.test(t) || /^\d+\.\s+/.test(t)) {
+          flush();
+          const ordered = /^\d+\.\s+/.test(t), tag = ordered ? "ol" : "ul", items = [];
+          while (i < lines.length) {
+            const lt = lines[i].trim();
+            const mm = ordered ? /^\d+\.\s+(.*)$/.exec(lt) : /^[-*+]\s+(.*)$/.exec(lt);
+            if (!mm) break;
+            items.push("<li>" + mdInline(mm[1]) + "</li>"); i++;
+          }
+          html += `<${tag}>${items.join("")}</${tag}>`;
+          continue;
+        }
+        para.push(t); i++;
+      }
+      flush();
+      return html.replace(/\u0002(\d+)\u0002/g, (m, n) => blocks[n]);
     }
 
     function fmtSize(n) {
@@ -363,6 +500,7 @@
       document.querySelectorAll(".conv").forEach(el => el.classList.remove("active"));
       const list = await (await fetch("/conversations")).json();
       renderConvList(list);
+      closeSidebar();   // referme le panneau coulissant sur petits écrans
       scrollDown();
       $prompt.focus();
     }
@@ -386,7 +524,12 @@
       wrap.className = "msg " + (role === "user" ? "user" : "bot");
       const bubble = document.createElement("div");
       bubble.className = "bubble";
-      bubble.textContent = text;
+      if (role === "user") {
+        bubble.textContent = text;          // les messages utilisateur restent en texte brut
+      } else {
+        bubble.classList.add("md");
+        bubble.innerHTML = renderMarkdown(text);  // réponses de l'agent : markdown rendu
+      }
       wrap.appendChild(bubble);
       $messages.appendChild(wrap);
       scrollDown();
@@ -441,7 +584,8 @@
           `<span class="res">${escapeHtml(evt.preview || "")}</span>`);
       } else if (evt.type === "final") {
         ui.bubble.classList.remove("typing");
-        ui.bubble.textContent = evt.text;
+        ui.bubble.classList.add("md");
+        ui.bubble.innerHTML = renderMarkdown(evt.text);
         scrollDown();
       } else if (evt.type === "stopped") {
         ui.bubble.classList.remove("typing");

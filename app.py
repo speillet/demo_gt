@@ -39,7 +39,11 @@ app = Flask(__name__)
 
 @app.get("/")
 def index():
-    return render_template("index.html")
+    # Pas de cache sur la page HTML : chaque chargement sert la version courante
+    # du template (sinon le navigateur réaffiche une ancienne page après relance).
+    resp = make_response(render_template("index.html"))
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
 
 
 import services.agent_service
